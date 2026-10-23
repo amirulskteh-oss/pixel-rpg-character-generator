@@ -359,7 +359,7 @@ function snapshotPreset(name){
   appearance:{cls:state.cls,direction:$('direction').value,pose:$('pose').value,skin:$('skin').value,hair:$('hair').value,outfit:$('outfit').value,weapon:$('weapon').value,seed:Math.max(1,Math.min(999999,Number(state.seed)||1))},
   partPalette:{hair:$('partHair').value,weapon:$('partWeapon').value,outfit:$('partOutfit').value},
   layerVisibility:{parts:Object.fromEntries(PRESET_PART_KEYS.map(k=>[k,!!state.partLayers[k]])),regions:Object.fromEntries(PRESET_REGION_KEYS.map(k=>[k,!!state.layers[k]])),partOrder:state.partOrder.slice(),layerOrder:state.layerOrder.slice()},
-  animation:{type:$('animType').value,direction:$('animDirection').value,count:Number($('animCount').value)||8,fps:Number($('animFps').value)||8,layout:$('animLayout').value,columns:Number($('animColumns').value)||4,spacing:Number($('animSpacing').value)||2,pivot:$('animPivot').value,pivotX:Number($('animPivotX').value)||48,pivotY:Number($('animPivotY').value)||84}};
+  animation:{type:$('animType').value,direction:$('animDirection').value,count:Number($('animCount').value)||8,fps:Number($('animFps').value)||8,layout:$('animLayout').value,columns:Number($('animColumns').value)||4,spacing:Number($('animSpacing').value)||2,pivot:$('animPivot').value,pivotX:Number.isFinite(Number($('animPivotX').value))?Number($('animPivotX').value):48,pivotY:Number.isFinite(Number($('animPivotY').value))?Number($('animPivotY').value):84}};
 }
 function normalizePreset(input){
  if(!input||typeof input!=='object')throw new Error('Preset JSON must be an object.');
@@ -379,7 +379,8 @@ function normalizePreset(input){
  p.layerVisibility.layerOrder=safeOrder(vis.layerOrder,PRESET_REGION_KEYS);
  const an=raw.animation||{};
  for(const [key,id] of [['type','animType'],['direction','animDirection'],['layout','animLayout'],['pivot','animPivot']]){const value=an[key]??$(id).value;if(!selectHasValue(id,value))throw new Error('Unsupported animation '+key+': '+String(value));p.animation[key]=String(value);}
- for(const [key,id,min,max,fallback] of [['count','animCount',4,16,8],['fps','animFps',4,20,8],['columns','animColumns',2,8,4],['spacing','animSpacing',0,16,2],['pivotX','animPivotX',0,95,48],['pivotY','animPivotY',0,95,84]]){const n=Number(an[key]);p.animation[key]=Number.isFinite(n)?Math.max(min,Math.min(max,Math.round(n))):fallback;}
+ for(const [key,id,fallback] of [['count','animCount',8],['fps','animFps',8],['columns','animColumns',4],['spacing','animSpacing',2]]){const value=an[key]??$(id).value;if(!selectHasValue(id,value))throw new Error('Unsupported animation '+key+' value: '+String(value));p.animation[key]=Number(value);}
+ for(const [key,fallback] of [['pivotX',48],['pivotY',84]]){const n=Number(an[key]??p.animation[key]??fallback);p.animation[key]=Number.isFinite(n)?Math.max(0,Math.min(95,Math.round(n))):fallback;}
  return p;
 }
 function refreshPresetList(selectName=''){
