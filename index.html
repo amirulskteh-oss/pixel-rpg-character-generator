@@ -265,6 +265,13 @@ function inspectAnimationFrameList(frames,expected=frames.length){
  const motion={comparisons:pixelDiffs.length,meanChangedPixels:mean,minChangedPixels:pixelDiffs.length?Math.min(...pixelDiffs):0,maxChangedPixels:pixelDiffs.length?Math.max(...pixelDiffs):0,lowMotionTransitions:pixelDiffs.filter(x=>x<20).length};
  return{ok:errors.length===0,frameCount:frames.length,frameSize:{w:96,h:96},transparentBackground:bounds.length>0&&bounds.every(x=>x.cornersTransparent),frames,bounds,errors,warnings:uniqueWarnings,motion};
 }
+function validateAnimationFrames(showMessage=true){
+ const frames=state.animFrames||[],expected=Math.max(4,Math.min(16,Number($('animCount').value)||8)),report=inspectAnimationFrameList(frames,expected),box=$('animValidation'),motion=report.motion||{meanChangedPixels:0,lowMotionTransitions:0};
+ if(box){box.textContent=(report.ok?'FRAME QC PASS — ':'FRAME QC FAILED — ')+frames.length+' frames · 96×96 cells · '+report.errors.length+' errors · '+report.warnings.length+' warnings · mean '+motion.meanChangedPixels+' changed pixels per transition · '+motion.lowMotionTransitions+' low-motion transitions.'+(report.warnings.length?' '+report.warnings.slice(0,3).join(' '):' All frames have visible pixels and transparent corners.');box.dataset.qc=report.ok?'pass':'fail';}
+ if(showMessage)$('animStatus').textContent=report.ok?'Frame QC passed: '+frames.length+' visible 96×96 frames; mean transition difference '+motion.meanChangedPixels+' pixels.':'Frame QC found '+report.errors.length+' error(s). See validation details.';
+ return report;
+}
+
 function textBytes(value){return new TextEncoder().encode(typeof value==='string'?value:JSON.stringify(value,null,2));}
 function canvasPngBytes(canvas){const raw=atob(canvas.toDataURL('image/png').split(',')[1]),bytes=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)bytes[i]=raw.charCodeAt(i);return bytes;}
 function crc32(bytes){let crc=0xffffffff;for(let i=0;i<bytes.length;i++){crc^=bytes[i];for(let j=0;j<8;j++)crc=(crc&1)?(crc>>>1)^0xedb88320:crc>>>1;}return (crc^0xffffffff)>>>0;}
@@ -284,7 +291,7 @@ async function exportAnimationPackForClasses(classList,allClasses){
  selectedButton.textContent=allClasses?'Preparing 12 classes…':'Preparing pack…';
  const stamp=new Date().toISOString(),total=Math.max(4,Math.min(16,Number($('animCount').value)||8)),fps=Math.max(1,Number($('animFps').value)||8);
  const mode=$('animLayout').value,cols=Number($('animColumns').value)||4,spacing=Number($('animSpacing').value)||0,pivot=getAnimationPackPivot();
- const types=['idle','walk','attack','hurt'],dirs=['front','back','left','right'],files=[];
+ const types=['idle','walk','attack','hurt'],dirs=['front','back','left','right'],files=[];let singleManifest=null,singleQc=null;
  const masterManifest={app:'Pixel RPG Character Generator',version:'1.5',createdAt:stamp,seed:state.seed,classCount:classList.length,sequenceCount:classList.length*16,frameSize:{width:96,height:96},fps,frameCountPerSequence:total,layout:{mode,columns:cols,spacing},pivot:{x:pivot.x,y:pivot.y,preset:pivot.preset},classes:[]};
  const masterQc={ok:true,version:'1.5',createdAt:stamp,seed:state.seed,classCount:classList.length,sequenceCount:classList.length*16,frameCount:0,errors:[],warnings:[],classes:[]};
  let finishedSequences=0;
@@ -314,7 +321,7 @@ async function exportAnimationPackForClasses(classList,allClasses){
     }
    }
    const manifestPath=prefix+'manifest.json',qcPath=prefix+'reports/qc-report.json';
-   files.push({name:manifestPath,data:textBytes(classManifest)},{name:qcPath,data:textBytes(classQc)});
+   if(allClasses)files.push({name:manifestPath,data:textBytes(classManifest)},{name:qcPath,data:textBytes(classQc)});else{singleManifest=classManifest;singleQc=classQc;}
    masterManifest.classes.push({id:cls.id,name:cls.name,manifest:manifestPath,qcReport:qcPath,sequenceCount:16,frameCount:classQc.frameCount,qcPassed:classQc.ok,warnings:classQc.warnings.length});
    masterQc.classes.push({id:cls.id,name:cls.name,qcPassed:classQc.ok,sequenceCount:classQc.sequenceCount,frameCount:classQc.frameCount,errors:classQc.errors,warnings:classQc.warnings.length});
   }
@@ -322,7 +329,7 @@ async function exportAnimationPackForClasses(classList,allClasses){
    files.push({name:'manifest.json',data:textBytes(masterManifest)},{name:'reports/qc-report.json',data:textBytes(masterQc)});
    files.push({name:'README.txt',data:textBytes('Pixel RPG Character Generator v1.5 — ALL-CLASS ANIMATION ASSET PACK\n\nClasses: '+classList.length+'\nSequences: '+masterManifest.sequenceCount+'\nFrame size: 96x96 px\nFrames per sequence: '+total+'\nFPS: '+fps+'\nSeed: '+state.seed+'\n\nEach classes/<class-id>/ folder contains sprites/, atlases/, manifest.json, and reports/qc-report.json. The root manifest indexes all class packs. Atlas rectangles use top-left coordinates and 96x96 untrimmed logical frames. Sprite sheets use '+mode+' layout with '+spacing+' px spacing. Procedural animation remains a blockout and should be reviewed in-game before production use.\n'));
   }else{
-   files.push({name:'manifest.json',data:textBytes(masterManifest)},{name:'reports/qc-report.json',data:textBytes(masterQc)});
+   files.push({name:'manifest.json',data:textBytes(singleManifest)},{name:'reports/qc-report.json',data:textBytes(singleQc)});
    files.push({name:'README.txt',data:textBytes('Pixel RPG Character Generator v1.5 — Animation Asset Pack\n\nClass: '+classList[0].name+' ('+classList[0].id+')\nSeed: '+state.seed+'\nSequences: 16 (idle, walk, attack, hurt × front, back, left, right)\nFrames per sequence: '+total+'\nFPS: '+fps+'\nFrame size: 96x96 px\nOrigin/pivot: '+pivot.x+','+pivot.y+' ('+pivot.preset+')\n\nContains transparent PNG sprite sheets, per-sequence atlas JSON metadata, manifest and QC report. Atlas rectangles use top-left coordinates and untrimmed 96x96 logical frames. Motion is procedural blockout and should be reviewed in-game before production use.\n'));
   }
   if(!masterQc.ok){$('animStatus').textContent='Pack stopped: QC found critical errors. Export the QC report JSON to inspect them.';downloadJson(masterQc,allClasses?'pixel-rpg-all-classes-'+state.seed+'-qc.json':classList[0].id+'-animation-'+state.seed+'-qc.json');return;}
