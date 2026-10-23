@@ -1,0 +1,55 @@
+name: Validate Pixel RPG Generator
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Audit HTML structure and extract inline JavaScript
+        run: |
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+
+          html = Path("index.html").read_text(encoding="utf-8")
+          ids = re.findall(r'\\bid="([^"]+)"', html)
+          duplicates = sorted({item for item in ids if ids.count(item) > 1})
+          if duplicates:
+              raise SystemExit("Duplicate HTML IDs: " + ", ".join(duplicates))
+
+          scripts = re.findall(r'<script\\b[^>]*>(.*?)</script\\s*>', html, flags=re.I | re.S)
+          if not scripts:
+              raise SystemExit("No inline JavaScript block found")
+          Path("/tmp/pixel-rpg-generator.js").write_text("\\n;\\n".join(scripts), encoding="utf-8")
+
+          required = [
+              'id="exportAllClassesPack"',
+              "async function exportAllClassesAnimationPack",
+              "function validateAnimationFrames",
+              "function inspectAnimationFrameList",
+              "function makeZip",
+          ]
+          missing = [item for item in required if item not in html]
+          if missing:
+              raise SystemExit("Required animation pipeline parts missing: " + ", ".join(missing))
+          print(f"HTML structure OK; {len(ids)} unique IDs; {len(scripts)} inline script block(s).")
+          PY
+
+      - name: Check JavaScript syntax
+        run: node --check /tmp/pixel-rpg-generator.js
